@@ -20,9 +20,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error("Error restoring session:", error);
+        // If the refresh token is invalid, sign out to clear it
+        if (error.message.includes("Refresh Token Not Found") || error.message.includes("Invalid Refresh Token")) {
+          supabase.auth.signOut().then(() => {
+            setUser(null);
+            setSession(null);
+          });
+        }
+      } else {
+        setSession(session);
+        setUser(session?.user ?? null);
+      }
+      setLoading(false);
+    }).catch(err => {
+      console.error("Unexpected error restoring session:", err);
       setLoading(false);
     });
 

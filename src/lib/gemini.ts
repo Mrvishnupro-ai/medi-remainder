@@ -1,89 +1,82 @@
+
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabase } from './supabase';
 
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
 }
 
-export interface UserContext {
-  profile: {
-    full_name: string;
-    preferred_channel: string;
-    email?: string;
-  };
-  medications: Array<{
-    medication_name: string;
-    dosage: string;
-    instructions: string;
-    active: boolean;
-  }>;
-  adherence: Array<{
-    medication_name: string;
-    scheduled_time: string;
-    taken_at?: string;
-    status: string;
-  }>;
-  recentQueries: string[];
+
+// Initialize Gemini API
+// Note: In a production environment, you should never expose API keys on the client side.
+// This should be proxied through a backend/Edge Function.
+// For this prototype, we'll use the key from environment variables.
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const genAI = new GoogleGenerativeAI(API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+export interface MedicationSuggestion {
+  name: string;
+  dosage: string;
+  type: string;
+  description: string;
 }
 
-export async function queryMedicationWithAI(
-  query: string,
-  userContext: UserContext,
-  history: ChatMessage[] = []
-): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+export interface HealthTip {
+  title: string;
+  content: string;
+  category: 'medication' | 'lifestyle' | 'nutrition';
+}
 
-  const conversationHistory = history
-    .map(message => `${message.role === 'user' ? 'USER' : 'ASSISTANT'}: ${message.content}`)
-    .join('\n');
-
-  const contextPrompt = `
-You are a helpful medication assistant. Use the following user context to provide personalized, accurate responses:
-
-USER PROFILE:
-- Name: ${userContext.profile.full_name}
-- Preferred communication: ${userContext.profile.preferred_channel}
-${userContext.profile.email ? `- Email: ${userContext.profile.email}` : ''}
-
-CURRENT MEDICATIONS:
-${userContext.medications.map(med => `- ${med.medication_name}: ${med.dosage}${med.instructions ? ` (${med.instructions})` : ''}${!med.active ? ' (Inactive)' : ''}`).join('\n')}
-
-RECENT ADHERENCE HISTORY:
-${userContext.adherence.slice(0, 10).map(log => `- ${log.medication_name}: ${log.status} on ${new Date(log.scheduled_time).toLocaleDateString()}${log.taken_at ? ` (taken at ${new Date(log.taken_at).toLocaleTimeString()})` : ''}`).join('\n')}
-
-PREVIOUS QUERIES:
-${userContext.recentQueries.slice(0, 5).map(q => `- ${q}`).join('\n')}
-
-CONVERSATION HISTORY:
-${conversationHistory || 'No prior messages.'}
-
-INSTRUCTIONS:
-- Provide accurate, helpful information about medications
-- Consider the user's current medications and adherence history
-- Be empathetic and encouraging about medication adherence
-- Always recommend consulting healthcare professionals for medical advice
-- If the query is about a medication not in their current regimen, provide general information but note it's not part of their current treatment
-- Keep responses concise but informative
-- Use the user's name when appropriate
-- Respond in 3 to 5 Lines
-
-LATEST USER QUERY: ${query}
-`;
+export const getMedicationSuggestions = async (query: string): Promise<MedicationSuggestion[]> => {
+  if (!query || query.length < 2 || !API_KEY) return [];
 
   try {
-    const result = await model.generateContent(contextPrompt);
-    const response = await result.response;
-    return response.text();
-  } catch (error) {
-    console.error('Gemini API error:', error);
-    throw new Error('Failed to get AI response. Please try again.');
-  }
-}
+    const prompt = `Suggest 3 medications that match the search term "${query}". 
+    Return strictly a JSON array with objects having fields: name, dosage (common), type (Pill, Syrup, etc), description (1 sentence). 
+    Do not include markdown formatting.`;
 
-export async function fetchUserContext(userId: string): Promise<UserContext> {
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const cleanText = text.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleanText) as MedicationSuggestion[];
+  } catch (error) {
+    console.error('Error fetching medication suggestions:', error);
+    return [];
+  }
+};
+
+export const getHealthTips = async (
+  medications: string[],
+  conditions: string[]
+): Promise<HealthTip[]> => {
+  if (!API_KEY) return [
+    { title: 'Stay Hydrated', content: 'Remember to drink plenty of water with your medications.', category: 'lifestyle' }
+  ];
+
+  try {
+    const prompt = `Generate 3 personalized health tips based on:
+    Medications: ${medications.join(', ')}
+    Conditions: ${conditions.join(', ')}
+    
+    Return strictly a JSON array with objects: title, content, category (medication|lifestyle|nutrition).
+    One tip should be a "Medifact" about one of the medications.
+    Do not include markdown formatting.`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const cleanText = text.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleanText) as HealthTip[];
+  } catch (error) {
+    console.error('Error fetching health tips:', error);
+    return [
+      { title: 'General Advice', content: 'Consult your doctor for personalized advice.', category: 'lifestyle' }
+    ];
+  }
+};
+
+export const fetchUserContext = async (userId: string): Promise<string> => {
   // Fetch user profile
   const { data: profile } = await supabase
     .from('user_profiles')
@@ -91,48 +84,75 @@ export async function fetchUserContext(userId: string): Promise<UserContext> {
     .eq('id', userId)
     .single();
 
-  // Fetch current medications
+  // Fetch active medications
   const { data: medications } = await supabase
     .from('medications')
     .select('*')
     .eq('user_id', userId)
     .eq('active', true);
 
-  // Fetch recent adherence logs (last 30 days)
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  if (!profile && !medications) return "";
 
-  const { data: adherenceLogs } = await supabase
-    .from('adherence_logs')
-    .select(`
-      *,
-      medications (
-        medication_name
-      )
-    `)
-    .eq('user_id', userId)
-    .gte('scheduled_time', thirtyDaysAgo.toISOString())
-    .order('scheduled_time', { ascending: false })
-    .limit(20);
+  let context = "User Context:\n";
+  if (profile) {
+    context += `Name: ${profile.full_name}\n`;
+  }
+  if (medications && medications.length > 0) {
+    context += "Active Medications:\n";
+    medications.forEach((med: any) => {
+      context += `- ${med.medication_name} (${med.dosage}): ${med.instructions || 'No instructions'}\n`;
+    });
+  } else {
+    context += "No active medications listed.\n";
+  }
+  return context;
+};
 
-  // For now, we'll initialize recentQueries as empty since we don't have a queries table
-  // This can be enhanced later to track user queries
-  const recentQueries: string[] = [];
+export const queryMedicationWithAI = async (
+  query: string,
+  context: string,
+  history: ChatMessage[]
+): Promise<string> => {
+  // @ts-ignore - API_KEY is defined in scope
+  if (!API_KEY) return "I'm sorry, I cannot process your request because the AI service is not configured.";
 
-  return {
-    profile: {
-      full_name: profile?.full_name || 'User',
-      preferred_channel: profile?.preferred_channel || 'email',
-      email: profile?.email,
-    },
-    medications: medications || [],
-    adherence: (adherenceLogs || []).map(log => ({
-      medication_name: log.medications?.medication_name || 'Unknown',
-      scheduled_time: log.scheduled_time,
-      taken_at: log.taken_at,
-      status: log.status,
-    })),
-    recentQueries,
-  };
-}
+  try {
+    const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
+    // Construct the chat history for Gemini
+    const systemInstruction = `You are a helpful medication assistant named Lyro. 
+    Use the following context about the user to answer their questions.
+    If the user asks about their medications, refer to the list provided.
+    If the user asks general medical questions, provide general information but always advise consulting a healthcare professional.
+    Keep answers concise and friendly.
+    
+    ${context}`;
+
+    const chat = chatModel.startChat({
+      history: [
+        {
+          role: "user",
+          parts: [{ text: systemInstruction }],
+        },
+        {
+          role: "model",
+          parts: [{ text: "Understood. I am Lyro, your medication assistant. use the provided context to answer questions." }],
+        },
+        ...history.map(msg => ({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        })) as any
+      ],
+      generationConfig: {
+        maxOutputTokens: 500,
+      },
+    });
+
+    const result = await chat.sendMessage(query);
+    const response = await result.response;
+    return response.text();
+  } catch (error) {
+    console.error('Error querying Gemini:', error);
+    return "I'm having trouble connecting to the AI right now. Please try again later.";
+  }
+};

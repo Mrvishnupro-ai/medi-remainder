@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
 // Use nodemailer for reliable SMTP handling
+// @deno-types="npm:@types/nodemailer@6.4.14"
 import nodemailer from 'npm:nodemailer@6.9.7';
 
 const corsHeaders = {
@@ -45,10 +46,12 @@ interface ReminderResult {
 }
 
 interface RequestPayload {
-  mode?: 'test' | 'direct-email';
+  mode?: 'test' | 'direct-email' | 'send-alert';
   userId?: string;
   channel?: string;
   message?: string;
+  to?: string;
+  subject?: string;
   payload?: Record<string, unknown>;
 }
 
@@ -57,19 +60,16 @@ const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
 const twilioWhatsAppFrom = Deno.env.get('TWILIO_WHATSAPP_FROM');
 
 // Gmail Configuration (for reference, but not used due to Deno limitations)
-const gmailEmail = Deno.env.get('GMAIL_EMAIL') || 'higaming707@gmail.com';
+const gmailEmail = Deno.env.get('GMAIL_EMAIL');
 const gmailAppPassword = Deno.env.get('GMAIL_APP_PASSWORD');
 
 // Resend Configuration (recommended for Deno)
 const resendApiKey = Deno.env.get('RESEND_API_KEY');
 
 // Email configuration
-const emailFromAddress = Deno.env.get('EMAIL_FROM') || 'medibot@notifications.com';
+const emailFromAddress = Deno.env.get('EMAIL_FROM') || 'noreply@mediremainder.app';
 
 const telegramBotToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
-const externalEmailApiUrl =
-  Deno.env.get('EMAIL_API_URL') ||
-  'https://sgcrguktsklm.org.in/phpmail-vishnu/public/api/send-email-html.php';
 
 const toWhatsAppAddress = (value: string) =>
   value.startsWith('whatsapp:') ? value : `whatsapp:${value}`;
@@ -125,7 +125,7 @@ async function sendEmailMessageGmail(
       return await sendViaResend(to, subject, message);
     }
 
-    // Last resort: database logging
+    // Last resort: database logging (Removed external API fallback)
     console.log(`[EMAIL] Falling back to relay logging for ${to}`);
     return await sendViaEmailRelay(to, subject, message);
   } catch (error) {
@@ -134,41 +134,7 @@ async function sendEmailMessageGmail(
   }
 }
 
-async function sendViaExternalEmailApi(
-  payload: Record<string, unknown>
-): Promise<{ success: boolean; data?: unknown; error?: string }> {
-  try {
-    const response = await fetch(externalEmailApiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const text = await response.text();
-    if (!response.ok) {
-      return {
-        success: false,
-        error: `External email API error (${response.status}): ${text}`,
-      };
-    }
-
-    let data: unknown = text;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      // keep raw text
-    }
-
-    return { success: true, data };
-  } catch (error) {
-    return {
-      success: false,
-      error: `External email API fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    };
-  }
-}
+// External Email API function removed as requested.
 
 async function sendViaSMTP(
   to: string,
@@ -296,7 +262,7 @@ async function sendViaEmailRelay(to: string, subject: string, message: string): 
 
     // Log email to database for tracking and future sending
     console.log(`[EMAIL RELAY] To: ${to}, Subject: ${subject}`);
-    
+
     // Store in a logs table if it exists (optional - creates audit trail)
     try {
       await supabase.from('email_logs').insert({
@@ -500,46 +466,36 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    if (payload?.mode === 'direct-email') {
-      if (!payload.payload || typeof payload.payload !== 'object') {
+    if (payload?.mode === 'send-alert') {
+      if (!payload.to || !payload.message) {
         return new Response(
-          JSON.stringify({ error: 'direct-email mode requires a payload object.' }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
+          JSON.stringify({ error: 'send-alert mode requires "to" and "message".' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const result = await sendViaExternalEmailApi(payload.payload as Record<string, unknown>);
-
-      if (!result.success) {
-        return new Response(
-          JSON.stringify({ error: result.error ?? 'Email API failed.' }),
-          {
-            status: 502,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      if (payload.userId) {
-        await supabase.from('reminder_logs').insert({
-          user_id: payload.userId,
-          medication_id: null,
-          channel: 'email',
-          status: result.success ? 'sent' : 'failed',
-          sent_at: result.success ? new Date().toISOString() : null,
-          error_message: result.error ?? null,
-        });
-      }
+      const result = await sendEmailMessageGmail(
+        payload.to,
+        payload.message,
+        payload.subject || 'MediBot Alert'
+      );
 
       return new Response(
         JSON.stringify({
-          message: 'Email dispatched via external API.',
-          data: result.data ?? null,
+          message: 'Alert sent.',
+          success: result.success,
+          error: result.error
         }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 'direct-email' mode removed as it depended on external API
+    if (payload?.mode === 'direct-email') {
+      return new Response(
+        JSON.stringify({ error: 'direct-email mode is no longer supported.' }),
         {
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
@@ -611,8 +567,16 @@ Deno.serve(async (req: Request) => {
     }
 
     const now = new Date();
-    const currentTime = now.toTimeString().split(' ')[0].slice(0, 5);
-    const today = now.toISOString().split('T')[0];
+    // Manual adjustment for IST (UTC+5:30)
+    // In a production app, we should store user timezones and query accordingly.
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffset);
+
+    // Use ISO string of the adjusted date to get HH:MM in IST
+    const currentTime = istDate.toISOString().split('T')[1].slice(0, 5);
+    const today = istDate.toISOString().split('T')[0];
+
+    console.log(`[CRON] Checking reminders for time: ${currentTime} (IST) / Date: ${today}`);
 
     const { data: schedules, error: schedulesError } = await supabase
       .from('medication_schedules')
@@ -633,7 +597,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const medicationIds = schedules.map((schedule) => schedule.medication_id);
+    const medicationIds = schedules.map((schedule: MedicationSchedule) => schedule.medication_id);
 
     const { data: medications, error: medicationsError } = await supabase
       .from('medications')
@@ -654,7 +618,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const userIds = [...new Set(medications.map((med) => med.user_id))];
+    const userIds = [...new Set(medications.map((med: Medication) => med.user_id))];
 
     const { data: profiles, error: profilesError } = await supabase
       .from('user_profiles')

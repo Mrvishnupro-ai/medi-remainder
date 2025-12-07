@@ -1,127 +1,134 @@
-# MediBot – Medication Adherence Companion
+# MediRemainder - Medication Reminder App
 
-MediBot is a full-stack medication adherence assistant built with Vite, React and TypeScript on the front end and Supabase for authentication, data storage, and database functions. It helps patients log their prescriptions, schedule reminders, track adherence, and chat with an AI assistant for medication guidance.
+A simple, effective web application to remind users to take their medication on time. Built with React (Vite) and Supabase.
 
-> **Channel roadmap**: In-app reminders and dashboard notifications are live today. Email, WhatsApp, and Telegram delivery are designed in the profile model and UI but are not yet wired to outbound messaging services.
+## Features
 
-## Working Features
-
-- Secure authentication with Supabase (email/password and Google OAuth) and profile bootstrap for new users.  
-- Medication library management including multi-time schedules, editing, soft delete, and validation for clean dose data.  
-- Reminder engine that checks schedules every minute, surfaces in-app modals, and records adherence outcomes (taken, missed, auto-marked).  
-- Adherence snapshot cards and trend views on the dashboard to highlight active meds, upcoming doses, and daily compliance.  
-- AI assistant powered by Gemini Flash that answers medication questions using the signed-in user’s context (profile, prescriptions, adherence history).  
-- Demo seeding script (`npm run seed:demo`) to create a sample user, medications, and adherence logs for quick exploration.
-
-## Upcoming Messaging Channels
-
-Although profile settings already let users pick a preferred channel, outbound delivery is still pending:
-
-- Email notifications via a transactional provider (e.g., Resend, SendGrid).
-- WhatsApp reminders using a verified business account (e.g., Twilio/Meta Cloud API).
-- Telegram bot delivery with chat ID linking inside the profile page.
-
-## Tech Stack
-
-- **Frontend**: React 18 + TypeScript, Tailwind CSS, Lucide icons, Vite build tooling.
-- **Backend**: Supabase Auth, Postgres tables & functions (see `supabase/migrations`).
-- **AI**: Google Gemini 2.5 Flash via `@google/generative-ai`.
-- **Tooling**: ESLint, TypeScript project refs, Supabase CLI (optional for local dev).
+- **Medication Management**: Add, edit, and list medications with dosage and instructions.
+- **Reminders**: Automated email reminders sent at scheduled times.
+- **Family Alerts**: Notifications can be sent to family members if medications are missed (configurable).
+- **AI Integration**: (Optional) Features for interpreting prescriptions using Gemini AI.
+- **Responsive Design**: Works on mobile and desktop.
 
 ## Prerequisites
 
-- A Supabase project (hosted or local) with the migration in `supabase/migrations` applied.
-- Google AI Studio API key with Gemini access.
-- Node.js 20 LTS (or newer) and npm 10+.
+- **Node.js** (v18 or higher)
+- **npm** (comes with Node.js)
+- **Supabase Account**: You need a free Supabase project.
 
-### Install Node.js & npm
+## Setup Guide
 
-**Windows (PowerShell)**
-
-```powershell
-wget https://nodejs.org/dist/v20.17.0/node-v20.17.0-x64.msi -OutFile node.msi
-Start-Process msiexec.exe -Wait -ArgumentList '/i node.msi /qn'
-Remove-Item node.msi
-node --version
-npm --version
-```
-
-Alternatively, use [nvm-windows](https://github.com/coreybutler/nvm-windows) to manage versions.
-
-**Ubuntu (bash)**
+### 1. Clone & Install
 
 ```bash
-sudo apt update
-sudo apt install -y curl ca-certificates
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-node --version
-npm --version
-```
-
-Using [nvm](https://github.com/nvm-sh/nvm) is recommended if you prefer per-project Node versions.
-
-## Environment Variables
-
-Create a `.env` file at the repository root (Vite loads variables with the `VITE_` prefix):
-
-```bash
-VITE_SUPABASE_URL=your-supabase-project-url
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-VITE_GEMINI_API_KEY=your-gemini-api-key
-```
-
-Do **not** commit real secrets. For local testing, you can copy `.env` to `.env.local` and set different values.
-
-## Database Setup
-
-1. Open the Supabase SQL editor and run `supabase/migrations/20251103060515_create_medication_tables.sql`, or use the Supabase CLI:
-   ```bash
-   supabase db push
-   ```
-2. Ensure the following tables exist: `user_profiles`, `medications`, `medication_schedules`, `adherence_logs`, and helper functions/triggers included in the migration.
-3. Optional: run `npm run seed:demo` to insert a sample user (credentials printed in the console) plus demo medications and adherence data.
-
-## Install & Run
-
-The npm workflow is identical on Windows and Ubuntu once Node is installed.
-
-```bash
+git clone <your-repo-url>
+cd medi-remainder
 npm install
+```
+
+### 2. Supabase Setup
+
+1. Create a new project on [Supabase.com](https://supabase.com/).
+2. Go to the **SQL Editor** in your Supabase dashboard.
+3. Copy the contents of `supabase/migrations/20251207000000_init_schema.sql` and run it in the SQL Editor.
+    - This creates all valid tables (Users, Medications, etc.) and security policies.
+    - **Important**: At the bottom of the SQL file, there is a commented-out section for the Cron Job.
+    - Uncomment that section and replace `YOUR_PROJECT_REF` and `YOUR_SERVICE_ROLE_KEY` with your actual values to enable automated reminders.
+
+### 3. Environment Variables
+
+1. Copy `.env.example` to `.env`:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+2. Open `.env` and fill in your details:
+    - `VITE_SUPABASE_URL`: Your Supabase Project URL.
+    - `VITE_SUPABASE_ANON_KEY`: Your Supabase Anon/Public Key.
+    - `SUPABASE_SERVICE_ROLE_KEY`: Service Role Key (for backend functions).
+    - **Email Settings**: Configure `GMAIL_EMAIL` and `GMAIL_APP_PASSWORD` (recommended for simple setup) OR `RESEND_API_KEY`.
+
+### 4. Deploy Backend Function
+
+This project uses Supabase Edge Functions to send reminders.
+
+1. Login to Supabase CLI:
+
+    ```bash
+    npx supabase login
+    ```
+
+2. Deploy the function:
+
+    ```bash
+    npx supabase functions deploy send-reminders
+    ```
+
+3. Set secrets for the function (VERY IMPORTANT):
+
+    ```bash
+    npx supabase secrets set GMAIL_EMAIL=your@gmail.com GMAIL_APP_PASSWORD=your_app_password --env-file .env
+    ```
+
+### 5. Running the App
+
+Start the frontend development server:
+
+```bash
 npm run dev
 ```
 
-- `npm run dev` – Vite dev server with hot reload (default at `http://localhost:5173`).
-- `npm run build` – Production build to `dist/`.
-- `npm run preview` – Serves the build locally to verify assets.
-- `npm run lint` / `npm run typecheck` – Quality gates for CI or local checks.
+Open `http://localhost:5173` to see the app.
 
-## Project Structure
+---
 
-```
-src/
-  components/    // Dashboard, medication manager, chatbot widget, modals
-  contexts/      // Supabase auth provider
-  lib/           // Supabase client, reminder service, Gemini helpers
-  App.tsx        // Navigation shell and reminder orchestration
-supabase/
-  migrations/    // Postgres schema for medications & adherence tracking
-scripts/
-  create-demo-user.mjs // Seeds demo data
-```
+## Folder Structure & Functionality
 
-## Development Notes
+### `src/` (Frontend)
 
-- The reminder service runs in the browser context, polling Supabase every minute and triggering in-app modals plus optional browser notifications (permission requested on login).
-- Adherence records are auto-marked as “not taken” if no action occurs within five minutes of the scheduled time; users can manually mark doses as taken or missed from the reminder modal.
-- The chatbot fetches live user context on each query to keep responses relevant; errors from the Gemini API surface as a banner inside the widget.
-- Profile settings already capture preferred channels and contact fields, paving the way for external messaging integrations.
+- **`components/`**: Reusable UI components.
+  - `AddMedicationModal.tsx`: Form to add new medications.
+  - `MedicationList.tsx`: Displays the list of user's medications.
+  - `Navbar.tsx`: Top navigation bar.
+  - `Auth.tsx`: Handles user login/signup.
+- **`lib/`**: Usage helpers and configuration.
+  - `supabase.ts`: Initializes the Supabase client.
+  - `reminderService.ts`: Helper functions to manage reminder logic on the frontend.
+- **`App.tsx`**: Main application component containing routing and layout.
+- **`main.tsx`**: Entry point of the React application.
 
-## Troubleshooting
+### `supabase/` (Backend)
 
-- **Missing environment variables** – The app throws an error on startup if Supabase or Gemini keys are absent. Double-check `.env`.
-- **Supabase session issues** – Ensure the redirect URL in Supabase Auth settings includes your local dev origin (`http://localhost:5173`).
-- **Notifications blocked** – Browsers require HTTPS for notifications in production; on localhost, allow notifications when prompted.
+- **`functions/send-reminders/`**: The customized Edge Function that sends emails.
+  - `index.ts`: The main logic. It checks the database for reminders due at the current time and sends emails via Gmail SMTP or Resend.
+  - **Key Functions inside `index.ts`**:
+    - `sendViaSMTP(...)`: Sends email using Nodemailer and Gmail.
+    - `sendViaResend(...)`: Sends email using Resend API.
+    - `processReminders()`: Main cron job logic (simplified name for explanation).
 
-Happy building! Contributions, feedback, and integration PRs for the additional messaging channels are welcome.
+### `scripts/` (Utilities)
 
+- `create-demo-user.mjs`: A helper script to create a demo user in Supabase for testing purposes.
+
+---
+
+## How It Works
+
+1. **User Signs Up**: Users create an account via the frontend.
+2. **Add Medication**: Users add their medications and set a reminder time.
+3. **Cron Job**: You can set up a Cron Job in Supabase (or use a scheduled trigger) to invoke the `send-reminders` function every minute/hour.
+    - The function checks `medication_schedules` for any reminder matching the current time.
+    - It fetches the user's email from `user_profiles`.
+    - It sends an email using the configured provider.
+
+## Upcoming Features (Next Phase)
+
+- WhatsApp Integration
+- Telegram Integration
+
+---
+
+## License
+
+[MIT](LICENSE)

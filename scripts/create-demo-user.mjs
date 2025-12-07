@@ -10,7 +10,7 @@ const {
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error(
     'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables. ' +
-      'Retrieve them from your Supabase dashboard and try again.'
+    'Retrieve them from your Supabase dashboard and try again.'
   );
   process.exit(1);
 }
@@ -18,15 +18,16 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 try {
-  const { data: existingUser, error: getUserError } = await supabase.auth.admin.getUserByEmail(
-    DEMO_EMAIL
-  );
+  // List users to find by email (getUserByEmail is deprecated/removed in v2 admin)
+  const { data: { users }, error: listUsersError } = await supabase.auth.admin.listUsers();
 
-  if (getUserError && getUserError.message !== 'User not found') {
-    throw getUserError;
+  if (listUsersError) {
+    throw listUsersError;
   }
 
-  let userId = existingUser?.user?.id;
+  const existingUser = users.find(u => u.email === DEMO_EMAIL);
+
+  let userId = existingUser?.id;
 
   if (!userId) {
     const { data: createdUser, error: createUserError } = await supabase.auth.admin.createUser({

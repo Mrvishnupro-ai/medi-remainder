@@ -1,8 +1,11 @@
-﻿import { ReactNode, useEffect, useState } from 'react';
+﻿
+
+import { ReactNode, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { MessageCircle, Send, Mail, AlertCircle, ArrowLeft } from 'lucide-react';
 import ContactPreferences from './ContactPreferences';
+import { BasicHealthInfo, FamilyMembersManager, DoctorAppointmentsManager } from './HealthProfile';
 
 interface UserProfile {
   id: string;
@@ -190,11 +193,10 @@ export default function Profile({ onBackToDashboard }: ProfileProps) {
 
         {channelMessage && (
           <div
-            className={`mt-6 flex items-start gap-3 rounded-2xl border px-4 py-4 text-sm ${
-              channelMessage.type === 'success'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-rose-200 bg-rose-50 text-rose-700'
-            }`}
+            className={`mt-6 flex items-start gap-3 rounded-2xl border px-4 py-4 text-sm ${channelMessage.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-rose-200 bg-rose-50 text-rose-700'
+              }`}
           >
             <AlertCircle size={20} />
             <span className="font-medium">{channelMessage.text}</span>
@@ -209,6 +211,10 @@ export default function Profile({ onBackToDashboard }: ProfileProps) {
           onProfileUpdate={setProfile}
         />
       )}
+
+      <BasicHealthInfo />
+      <FamilyMembersManager />
+      <DoctorAppointmentsManager />
     </div>
   );
 }
@@ -225,11 +231,10 @@ function ChannelCard({ label, description, icon, active, onClick }: ChannelCardP
   return (
     <button
       onClick={onClick}
-      className={`rounded-2xl border px-5 py-5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
-        active
-          ? 'border-blue-500 bg-blue-50 shadow-sm'
-          : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/60'
-      }`}
+      className={`rounded-2xl border px-5 py-5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${active
+        ? 'border-blue-500 bg-blue-50 shadow-sm'
+        : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/60'
+        }`}
     >
       <div className="flex items-center gap-3">
         <span className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-100 text-blue-600">

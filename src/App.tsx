@@ -13,6 +13,7 @@ import Dashboard from './components/Dashboard';
 import Profile from './components/Profile';
 import ChatbotWidget from './components/ChatbotWidget';
 import ReminderModal from './components/ReminderModal';
+import AiHealthTips from './components/AiHealthTips';
 import {
   startReminderService,
   stopReminderService,
@@ -21,7 +22,7 @@ import {
   MedicationWithSchedule,
 } from './lib/reminderService';
 
-type NavKey = 'dashboard' | 'profile';
+type NavKey = 'dashboard' | 'profile' | 'tips';
 
 interface NavItem {
   key: NavKey;
@@ -65,7 +66,7 @@ function AppContent() {
       stopReminderService();
       setActiveReminder(null);
     };
-    }, [user, loading]);
+  }, [user, loading]);
 
   const initials = useMemo(() => {
     const fullName =
@@ -92,6 +93,12 @@ function AppContent() {
       label: 'Profile & Alerts',
       description: 'Contact details & reminder channels',
       icon: <UserCircle className="h-5 w-5" aria-hidden />,
+    },
+    {
+      key: 'tips',
+      label: 'Health Tips',
+      description: 'AI-powered insights',
+      icon: <Bot className="h-5 w-5" aria-hidden />,
     },
   ];
 
@@ -134,11 +141,10 @@ function AppContent() {
                 <button
                   key={item.key}
                   onClick={() => setCurrentPage(item.key)}
-                  className={`w-full rounded-2xl px-4 py-3 text-left transition ${
-                    active
+                  className={`w-full rounded-2xl px-4 py-3 text-left transition ${active
                       ? 'bg-white/20 text-white'
                       : 'text-white/80 hover:bg-white/10'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-3">
                     <span className="flex h-10 w-10 items-center justify-center rounded-lg text-white">
@@ -225,8 +231,10 @@ function AppContent() {
         <div className="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
           {currentPage === 'dashboard' ? (
             <Dashboard onNavigateToProfile={() => setCurrentPage('profile')} />
-          ) : (
+          ) : currentPage === 'profile' ? (
             <Profile onBackToDashboard={() => setCurrentPage('dashboard')} />
+          ) : (
+            <AiHealthTips onBack={() => setCurrentPage('dashboard')} />
           )}
         </div>
       </main>
@@ -240,9 +248,8 @@ function AppContent() {
               <button
                 key={item.key}
                 onClick={() => setCurrentPage(item.key)}
-                className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-xs font-semibold transition ${
-                  active ? 'bg-brand-navy text-white shadow-inner' : 'text-gray-600 hover:bg-gray-100'
-                }`}
+                className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-xs font-semibold transition ${active ? 'bg-brand-navy text-white shadow-inner' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
               >
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg">
                   {item.icon}

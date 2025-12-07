@@ -185,9 +185,8 @@ export function showNotification(medication: MedicationWithSchedule): void {
   const options: ReminderNotificationOptions = {
     title,
     options: {
-      body: `Take ${medication.dosage} at ${medication.reminder_time}${
-        medication.instructions ? `\n${medication.instructions}` : ''
-      }`,
+      body: `Take ${medication.dosage} at ${medication.reminder_time}${medication.instructions ? `\n${medication.instructions}` : ''
+        }`,
       icon: '/pill-icon.png',
       badge: '/pill-badge.png',
       tag: `reminder-${medication.id}`,
@@ -350,6 +349,7 @@ export function startReminderService(userId: string): void {
 
   // Check immediately
   checkAndNotifyReminders(userId);
+  checkMissedMedications(userId);
 
   // Set up interval to check every minute (at the start of each minute)
   const checkReminders = () => {
@@ -403,8 +403,74 @@ export function setReminderCallback(callback: (medication: MedicationWithSchedul
 }
 
 /**
+ * Check for 3 consecutive days of missed medications
+ */
+async function checkMissedMedications(userId: string): Promise<void> {
+  try {
+    const today = new Date();
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(today.getDate() - 3);
+
+    const { data: logs } = await supabase
+      .from('adherence_logs')
+      .select('medication_id, status, scheduled_time')
+      .eq('user_id', userId)
+      .gte('scheduled_time', threeDaysAgo.toISOString())
+      .in('status', ['missed', 'not_taken_auto']);
+
+    if (!logs || logs.length === 0) return;
+
+    // Group by medication
+    const missedByMed = new Map<string, Set<string>>();
+    logs.forEach(log => {
+      const date = new Date(log.scheduled_time).toDateString();
+      if (!missedByMed.has(log.medication_id)) {
+        missedByMed.set(log.medication_id, new Set());
+      }
+      missedByMed.get(log.medication_id)?.add(date);
+    });
+
+    // Check for 3 active days
+    for (const [medId, dates] of missedByMed.entries()) {
+      if (dates.size >= 3) {
+        // Fetch medication name and family members
+        const { data: med } = await supabase.from('medications').select('medication_name').eq('id', medId).single();
+        const { data: family } = await supabase.from('family_members').select('name, email').eq('user_id', userId);
+
+        if (family && family.length > 0) {
+          for (const member of family) {
+            if (member.email) {
+              console.log(`[ALERT] Sending email to ${member.name} (${member.email}) for missed medication: ${med?.medication_name}`);
+
+              await supabase.functions.invoke('send-reminders', {
+                body: {
+                  mode: 'send-alert',
+                  to: member.email,
+                  message: `Hello ${member.name}, checking in for ${med?.medication_name}. The patient has missed 3 consecutive doses. Please check on them.`,
+                  subject: `Urgent: Missed Medication Alert - ${med?.medication_name}`
+                }
+              });
+            }
+          }
+
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Family Alert Triggered', {
+              body: `We've notified your family members about missed doses of ${med?.medication_name}.`,
+              icon: '/alert-icon.png'
+            });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking missed medications:', error);
+  }
+}
+
+/**
  * Register a callback to refresh the page when a reminder is triggered
  */
 export function setPageRefreshCallback(callback: () => void): void {
   pageRefreshCallback = callback;
 }
+
