@@ -47,6 +47,7 @@ npm install
     - `VITE_SUPABASE_URL`: Your Supabase Project URL.
     - `VITE_SUPABASE_ANON_KEY`: Your Supabase Anon/Public Key.
     - `SUPABASE_SERVICE_ROLE_KEY`: Service Role Key (for backend functions).
+    - `VITE_GEMINI_API_KEY`: (Optional) Your Google Gemini API Key for AI features. Get it [here](https://aistudio.google.com/app/apikey).
     - **Email Settings**: Configure `GMAIL_EMAIL` and `GMAIL_APP_PASSWORD` (recommended for simple setup) OR `RESEND_API_KEY`.
 
 ### 4. Deploy Backend Function
