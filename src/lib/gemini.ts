@@ -1,5 +1,5 @@
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { supabase } from './supabase';
 
 export interface ChatMessage {
@@ -7,14 +7,16 @@ export interface ChatMessage {
   content: string;
 }
 
-
 // Initialize Gemini API
-// Note: In a production environment, you should never expose API keys on the client side.
-// This should be proxied through a backend/Edge Function.
-// For this prototype, we'll use the key from environment variables.
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
-const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+// Initialize client
+const ai = new GoogleGenAI({
+  apiKey: API_KEY,
+});
+
+// Model to use
+const MODEL_NAME = 'gemini-2.5-flash';
 
 export interface MedicationSuggestion {
   name: string;
@@ -37,8 +39,20 @@ export const getMedicationSuggestions = async (query: string): Promise<Medicatio
     Return strictly a JSON array with objects having fields: name, dosage (common), type (Pill, Syrup, etc), description (1 sentence). 
     Do not include markdown formatting.`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const result = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }]
+        }
+      ]
+    });
+
+    // Check compatibility with new SDK response structure
+    const text = result.text || result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!text) return [];
+
     const cleanText = text.replace(/```json|```/g, '').trim();
     return JSON.parse(cleanText) as MedicationSuggestion[];
   } catch (error) {
@@ -64,8 +78,19 @@ export const getHealthTips = async (
     One tip should be a "Medifact" about one of the medications.
     Do not include markdown formatting.`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const result = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }]
+        }
+      ]
+    });
+
+    const text = result.text || result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!text) return [];
+
     const cleanText = text.replace(/```json|```/g, '').trim();
     return JSON.parse(cleanText) as HealthTip[];
   } catch (error) {
@@ -113,13 +138,9 @@ export const queryMedicationWithAI = async (
   context: string,
   history: ChatMessage[]
 ): Promise<string> => {
-  // @ts-ignore - API_KEY is defined in scope
-  if (!API_KEY) return "I'm sorry, I cannot process your request because the AI service is not configured.";
+  if (!API_KEY) return "I'm sorry, I cannot process your request because the AI service is not configured (Missing API Key).";
 
   try {
-    const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-    // Construct the chat history for Gemini
     const systemInstruction = `You are a helpful medication assistant named Lyro. 
     Use the following context about the user to answer their questions.
     If the user asks about their medications, refer to the list provided.
@@ -128,29 +149,29 @@ export const queryMedicationWithAI = async (
     
     ${context}`;
 
-    const chat = chatModel.startChat({
-      history: [
-        {
-          role: "user",
-          parts: [{ text: systemInstruction }],
-        },
-        {
-          role: "model",
-          parts: [{ text: "Understood. I am Lyro, your medication assistant. use the provided context to answer questions." }],
-        },
-        ...history.map(msg => ({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }]
-        })) as any
-      ],
-      generationConfig: {
-        maxOutputTokens: 500,
-      },
+    // Map history to new format
+    const contents = [
+      { role: 'user', parts: [{ text: systemInstruction }] },
+      { role: 'model', parts: [{ text: "Understood. I am Lyro, your medication assistant. use the provided context to answer questions." }] },
+      ...history.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      }))
+    ];
+
+    // Add current query
+    contents.push({ role: 'user', parts: [{ text: query }] });
+
+    const result = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: contents as any
     });
 
-    const result = await chat.sendMessage(query);
-    const response = await result.response;
-    return response.text();
+    const text = result.text || result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    if (!text) return "I didn't get a clear response.";
+
+    return text;
   } catch (error) {
     console.error('Error querying Gemini:', error);
     return "I'm having trouble connecting to the AI right now. Please try again later.";

@@ -107,7 +107,7 @@ export default function ContactPreferences({
     setSendingTest(true);
     setTestStatus(null);
 
-    const { error, data } = await supabase.functions.invoke('smooth-processor', {
+    const { error, data } = await supabase.functions.invoke('send-reminders', {
       body: {
         mode: 'test',
         userId: user.id,

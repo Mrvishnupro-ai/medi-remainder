@@ -201,7 +201,7 @@ CREATE INDEX IF NOT EXISTS idx_medication_info_drug_name ON medication_info(drug
 
 -- 12. Setup Cron Job for Reminders
 -- IMPORTANT: Enable this manually after deploying by replacing YOUR_PROJECT_REF and YOUR_SERVICE_ROLE_KEY
-/*
+
 select
   cron.schedule(
     'invoke-send-reminders', -- unique name of the job
@@ -215,4 +215,4 @@ select
       ) as request_id;
     $$
   );
-*/
+

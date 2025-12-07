@@ -5,9 +5,8 @@ import nodemailer from 'npm:nodemailer@6.9.7';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'Content-Type, Authorization, X-Client-Info, Apikey',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 const SUPPORTED_CHANNELS = ['email', 'whatsapp', 'telegram'] as const;
@@ -377,7 +376,8 @@ function buildReminderMessage(
 async function dispatchNotification(
   channel: SupportedChannel,
   profile: UserProfile,
-  message: string
+  message: string,
+  subject?: string
 ): Promise<ReminderResult> {
   if (channel === 'email') {
     if (!profile.email) {
@@ -389,7 +389,7 @@ async function dispatchNotification(
       };
     }
 
-    const result = await sendEmailMessageGmail(profile.email, message);
+    const result = await sendEmailMessageGmail(profile.email, message, subject || 'Medication Reminder');
     return {
       user: profile.full_name,
       channel,
@@ -446,10 +446,7 @@ async function dispatchNotification(
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response('ok', { headers: corsHeaders });
   }
 
   let payload: RequestPayload | null = null;
@@ -543,7 +540,8 @@ Deno.serve(async (req: Request) => {
       const reminderResult = await dispatchNotification(
         resolvedChannel,
         profile as UserProfile,
-        message
+        message,
+        'Test Medication Reminder'
       );
 
       await supabase.from('reminder_logs').insert({
@@ -647,13 +645,15 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      const schedule = schedules.find((s) => s.medication_id === medication.id);
+      const schedule = schedules.find((s: MedicationSchedule) => s.medication_id === medication.id);
       const message = buildReminderMessage(userProfile, medication, schedule?.reminder_time);
+      const subject = `Medication Reminder: ${medication.medication_name}`;
 
       const result = await dispatchNotification(
         userProfile.preferred_channel,
         userProfile,
-        message
+        message,
+        subject
       );
 
       results.push({
