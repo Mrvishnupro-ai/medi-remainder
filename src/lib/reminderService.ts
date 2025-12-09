@@ -307,6 +307,21 @@ async function checkAndNotifyReminders(userId: string): Promise<void> {
 
       // Only notify once per minute per reminder
       if (!lastNotifiedReminders.has(reminderId)) {
+        // Check DB to see if already handled (persists across refreshes)
+        const scheduledDateTime = getScheduledDateTime(reminder.reminder_time);
+        const { data: existingLog } = await supabase
+          .from('adherence_logs')
+          .select('id')
+          .eq('medication_id', reminder.id)
+          .eq('user_id', userId)
+          .eq('scheduled_time', scheduledDateTime)
+          .maybeSingle();
+
+        if (existingLog) {
+          lastNotifiedReminders.add(reminderId);
+          continue;
+        }
+
         lastNotifiedReminders.add(reminderId);
 
         scheduleAutoMarkNotTaken(userId, reminder);
@@ -319,10 +334,10 @@ async function checkAndNotifyReminders(userId: string): Promise<void> {
         // Show modal via callback if available
         if (reminderCallback) {
           reminderCallback(reminder);
-        } else {
-          // Fallback to browser notification if callback not set
-          showNotification(reminder);
         }
+
+        // Always try to show browser notification
+        showNotification(reminder);
 
         // Clean up after 61 seconds to allow re-notification next minute
         setTimeout(() => {
